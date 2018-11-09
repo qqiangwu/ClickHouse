@@ -331,13 +331,13 @@ void MergeTreeDataPart::remove() const
         catch (const Poco::FileNotFoundException & ex)
         {
             /// If the file is already deleted, do nothing.
-            LOG_WARNING(storage.log, ex.what() << " (concurrent directory removing, ignored)");
+            LOG_WARNING(storage.log, __func__ << ":" << ex.message() << " (concurrent directory removing, ignored)");
         }
         catch (const Poco::DirectoryNotEmptyException & ex)
         {
             // MergeTreeDataMergerMutator is merging the partition, in NFS, we will get DirectoryNotEmptyExcetion
             // in concurrent removing
-            LOG_WARNING(storage.log, ex.what() << " (another thread is accessing the file in NFS, deferred)");
+            LOG_WARNING(storage.log, __func__ << ":" << ex.message() << " (another thread is access the file in NFS, deferred)");
         }
         catch (...)
         {
@@ -362,16 +362,15 @@ void MergeTreeDataPart::remove() const
     {
         to_dir.remove(true);
     }
-    catch (const Poco::FileNotFoundException & ex)
     {
         /// If the file is already deleted, do nothing.
-        LOG_WARNING(storage.log, ex.what() << " (concurrent directory removing, ignored)");
+        LOG_WARNING(storage.log, __func__ << ":" << ex.message() << " (concurrent directory removing, ignored)");
     }
     catch (const Poco::DirectoryNotEmptyException & ex)
     {
         // MergeTreeDataMergerMutator is merging the partition, in NFS, we will get DirectoryNotEmptyExcetion
         // in concurrent removing
-        LOG_WARNING(storage.log, ex.what() << " (another thread is access the file in NFS, deferred)");
+        LOG_WARNING(storage.log, __func__ << ":" << ex.message() << " (another thread is access the file in NFS, deferred)");
     }
 }
 

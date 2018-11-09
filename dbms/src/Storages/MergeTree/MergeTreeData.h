@@ -1,5 +1,6 @@
 #pragma once
 
+#include <common/ThreadPool.h>
 #include <Common/SimpleIncrement.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -598,7 +599,8 @@ private:
 
     String log_name;
     Logger * log;
-
+    ThreadPool partRmExecutor;
+    ThreadPool dirRmExecutor;
 
     /// Work with data parts
 

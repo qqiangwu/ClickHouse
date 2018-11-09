@@ -109,6 +109,7 @@ MergeTreeData::MergeTreeData(
     full_path(full_path_),
     broken_part_callback(broken_part_callback_),
     log_name(database_name + "." + table_name), log(&Logger::get(log_name + " (Data)")),
+    partRmExecutor(32), dirRmExecutor(32)
     data_parts_by_info(data_parts_indexes.get<TagByInfo>()),
     data_parts_by_state_and_info(data_parts_indexes.get<TagByStateAndInfo>())
 {
@@ -647,23 +648,43 @@ void MergeTreeData::clearOldTemporaryDirectories(ssize_t custom_directories_life
             {
                 if (tmp_dir.isDirectory() && isOldPartDirectory(tmp_dir, deadline))
                 {
-                    LOG_WARNING(log, "Removing temporary directory " << full_path << it.name());
-                    Poco::File(full_path + it.name()).remove(true);
+                    const auto path = full_path + it.name();
+
+                    dirRmExecutor.schedule([this, path]{
+                        try 
+                        {
+                            LOG_WARNING(log, "Removing temporary directory " << path);
+                            Poco::File(path).remove(true);
+                        }
+                        catch (const Poco::FileNotFoundException & ex)
+                        {
+                            /// If the file is already deleted, do nothing.
+                            LOG_WARNING(log, __func__ << ":" << ex.message() << " (concurrent directory removing, ignored)");
+                        }
+                        catch (const Poco::DirectoryNotEmptyException & ex)
+                        {
+                            // MergeTreeDataMergerMutator is merging the partition, in NFS, we will get DirectoryNotEmptyExcetion
+                            // in concurrent removing
+                            LOG_WARNING(log, __func__ << ":" << ex.message() << " (another thread is access the file in NFS, deferred)");
+                        }
+                    });
                 }
             }
             catch (const Poco::FileNotFoundException & ex)
             {
                 /// If the file is already deleted, do nothing.
-                LOG_WARNING(log, ex.what() << " (concurrent directory removing, ignored)");
+                LOG_WARNING(log, __func__ << ":" << ex.message() << " (concurrent directory removing, ignored)");
             }
             catch (const Poco::DirectoryNotEmptyException & ex)
             {
                 // MergeTreeDataMergerMutator is merging the partition, in NFS, we will get DirectoryNotEmptyExcetion
                 // in concurrent removing
-                LOG_WARNING(log, ex.what() << " (another thread is access the file in NFS, deferred)");
+                LOG_WARNING(log, __func__ << ":" << ex.message() << " (another thread is access the file in NFS, deferred)");
             }
         }
     }
+
+    dirRmExecutor.wait();
 }
 
 
@@ -771,10 +792,13 @@ void MergeTreeData::clearOldPartsFromFilesystem()
 
     for (const DataPartPtr & part : parts_to_remove)
     {
-        LOG_DEBUG(log, "Removing part from filesystem " << part->name);
-        part->remove();
+        partRmExecutor.schedule([this, part]{
+            LOG_DEBUG(log, "Removing part from filesystem " << part->name);
+            part->remove();
+        });
     }
 
+    partRmExecutor.wait();
     removePartsFinally(parts_to_remove);
 }
 
